@@ -1,38 +1,67 @@
-
 import express from "express";
 import cors from "cors";
-import { OAuth2Client } from "google-auth-library";
-import dotenv from "dotenv";
+import session from "express-session";
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 
-dotenv.config();
 const app = express();
-app.use(cors());
-app.use(express.json());
+const PORT = process.env.PORT || 3000;
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID; // Mettre dans Render
-const client = new OAuth2Client(CLIENT_ID);
+// 👉 Mets tes vraies infos Google dans Render Variables d'environnement
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
-// Endpoint pour vérifier le token côté serveur
-app.post("/verify-token", async (req, res) => {
-  const { token } = req.body;
+// Middleware
+app.use(cors({
+  origin: [
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "exp://127.0.0.1:19000",
+    "gamerhubxgoat://redirect"
+  ],
+  credentials: true
+}));
 
-  if (!token) return res.status(400).json({ error: "Token requis" });
+app.use(session({ 
+  secret: "super_secret_key", 
+  resave: false, 
+  saveUninitialized: true 
+}));
+app.use(passport.initialize());
+app.use(passport.session());
 
-  try {
-    const ticket = await client.verifyIdToken({
-      idToken: token,
-      audience: CLIENT_ID
+// Config Passport
+passport.use(new GoogleStrategy({
+  clientID: GOOGLE_CLIENT_ID,
+  clientSecret: GOOGLE_CLIENT_SECRET,
+  callbackURL: "/auth/google/callback"
+}, (accessToken, refreshToken, profile, done) => {
+  // Ici tu gères ton utilisateur (sauvegarde DB si nécessaire)
+  return done(null, { profile, accessToken });
+}));
+
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((user, done) => done(null, user));
+
+// Route pour démarrer OAuth Google
+app.get("/auth/google",
+  passport.authenticate("google", { scope: ["profile", "email"] })
+);
+
+// Callback après Google
+app.get("/auth/google/callback",
+  passport.authenticate("google", { failureRedirect: "/login" }),
+  (req, res) => {
+    res.json({
+      message: "Authentification réussie ✅",
+      user: req.user
     });
-
-    const payload = ticket.getPayload();
-    res.json({ success: true, user: payload });
-  } catch (err) {
-    console.error("❌ Erreur OAuth :", err);
-    res.status(401).json({ success: false, error: "Token invalide" });
   }
-});
+);
 
-const PORT = process.env.PORT || 3003;
+// Route test login
+app.get("/", (req, res) => res.send("Serveur OAuth Google GamerHubX GOAT en marche 🚀"));
+
 app.listen(PORT, () => {
-  console.log(`🔑 Serveur Google OAuth en marche sur le port ${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
